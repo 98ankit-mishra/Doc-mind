@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocMind - AI PDF Research Assistant</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>DocMind</h1>
+            <p>AI PDF Research Assistant</p>
+        </header>
+
+        <main>
+            <!-- Upload Section -->
+            <section class="upload-section">
+                <h2>1. Upload PDF</h2>
+                <div class="upload-controls">
+                    <input type="file" id="pdf-upload" accept=".pdf">
+                    <button id="upload-btn" onclick="uploadPDF()">Upload & Process</button>
+                    <button id="clear-btn" class="secondary" onclick="clearDB()">Clear Database</button>
+                </div>
+                <div id="upload-status" class="status-msg"></div>
+            </section>
+
+            <!-- Chat Section -->
+            <section class="chat-section">
+                <h2>2. Ask Questions</h2>
+                
+                <div class="chat-history" id="chat-history">
+                    <!-- Chat messages will appear here -->
+                </div>
+
+                <div class="input-area">
+                    <input type="text" id="question-input" placeholder="What is this document about?" onkeypress="handleKeyPress(event)">
+                    <button id="ask-btn" onclick="askQuestion()">Ask</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
