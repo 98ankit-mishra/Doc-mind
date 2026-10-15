@@ -1,10 +1,8 @@
-from langchain_huggingface import HuggingFaceEmbeddings
+from chromadb.utils import embedding_functions
 
 def get_embeddings():
     """
-    Returns the HuggingFace embeddings model.
-    Uses 'all-MiniLM-L6-v2' as it is fast, free, and runs locally.
+    Returns the native ChromaDB embedding function.
+    Uses 'all-MiniLM-L6-v2' running locally without LangChain.
     """
-    return HuggingFaceEmbeddings(
-        model_name="all-MiniLM-L6-v2"
-    )
+    return embedding_functions.DefaultEmbeddingFunction()

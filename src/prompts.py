@@ -1,8 +1,4 @@
-from langchain_core.prompts import PromptTemplate
-
-# A clear and strict prompt template as requested by the user.
-RAG_PROMPT_TEMPLATE = """
-Answer the user's question only using the provided document context.
+RAG_PROMPT_TEMPLATE = """Answer the user's question only using the provided document context.
 
 If the answer cannot be found in the provided context, say:
 'I could not find this information in the uploaded document.'
@@ -15,11 +11,10 @@ Context:
 
 Question: {question}
 
-Answer:
-"""
+Answer:"""
 
-def get_prompt_template() -> PromptTemplate:
-    return PromptTemplate(
-        template=RAG_PROMPT_TEMPLATE,
-        input_variables=["context", "question"]
-    )
+def format_prompt(context: str, question: str) -> str:
+    """
+    Formats the RAG prompt string without LangChain PromptTemplate.
+    """
+    return RAG_PROMPT_TEMPLATE.format(context=context, question=question).strip()

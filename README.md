@@ -13,13 +13,14 @@ The application takes a user's PDF, extracts its text, and stores it in a search
 - **Local Vector Database:** Uses ChromaDB for fast, persistent, and local similarity search.
 - **Free Local Embeddings:** Uses HuggingFace embeddings (`all-MiniLM-L6-v2`) meaning no cost for vectorization.
 
-## 3. Technology Stack
+## 3. Technology Stack (100% Pure Python - Zero LangChain Overhead)
 - **Language:** Python
-- **Backend Framework:** FastAPI
+- **Backend Framework:** FastAPI & Uvicorn
 - **Frontend:** HTML / CSS / JavaScript
-- **LLM API:** Groq API
-- **Embeddings:** HuggingFace Local
-- **Vector Database:** ChromaDB
+- **LLM API:** Groq Python SDK (Llama 3)
+- **Vector Database & Embeddings:** ChromaDB Native Client (all-MiniLM-L6-v2)
+- **PDF Extraction:** Pure PyPDF
+- **Architecture:** Zero LangChain dependencies for maximum performance, clean debugging, and zero framework bloat.
 
 ---
 

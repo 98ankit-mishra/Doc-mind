@@ -1,41 +1,83 @@
 import os
+import shutil
 from typing import List
-from langchain_chroma import Chroma
-from langchain_core.documents import Document
+import chromadb
 from .embeddings import get_embeddings
+from .pdf_processor import Document
 
 CHROMA_PATH = "chroma_db"
+COLLECTION_NAME = "docmind_collection"
 
-def get_vector_store() -> Chroma:
+def get_client() -> chromadb.PersistentClient:
+    return chromadb.PersistentClient(path=CHROMA_PATH)
+
+def get_collection():
     """
-    Initializes or loads the ChromaDB vector store.
+    Initializes or loads the persistent ChromaDB collection.
     """
-    embeddings = get_embeddings()
-    return Chroma(
-        persist_directory=CHROMA_PATH,
-        embedding_function=embeddings
+    client = get_client()
+    embedding_fn = get_embeddings()
+    return client.get_or_create_collection(
+        name=COLLECTION_NAME,
+        embedding_function=embedding_fn
     )
 
 def add_documents_to_db(documents: List[Document]):
     """
     Adds document chunks to the ChromaDB vector store.
     """
-    vector_store = get_vector_store()
-    vector_store.add_documents(documents)
+    if not documents:
+        return
 
-def get_retriever(k: int = 4):
+    collection = get_collection()
+    texts = [doc.page_content for doc in documents]
+    metadatas = [doc.metadata for doc in documents]
+    ids = [f"chunk_{i}_{abs(hash(doc.page_content))}" for i, doc in enumerate(documents)]
+
+    collection.add(
+        documents=texts,
+        metadatas=metadatas,
+        ids=ids
+    )
+
+def query_similar_documents(query: str, k: int = 4) -> List[Document]:
     """
-    Returns a retriever configured to fetch the top-k most relevant chunks.
+    Retrieves top-k most similar document chunks for the query.
     """
-    vector_store = get_vector_store()
-    return vector_store.as_retriever(search_kwargs={"k": k})
+    collection = get_collection()
+    count = collection.count()
+    if count == 0:
+        return []
+
+    n_results = min(k, count)
+    results = collection.query(
+        query_texts=[query],
+        n_results=n_results
+    )
+
+    docs: List[Document] = []
+    if results and "documents" in results and results["documents"]:
+        retrieved_texts = results["documents"][0]
+        retrieved_metas = (
+            results["metadatas"][0]
+            if "metadatas" in results and results["metadatas"]
+            else [{}] * len(retrieved_texts)
+        )
+
+        for text, meta in zip(retrieved_texts, retrieved_metas):
+            docs.append(Document(page_content=text, metadata=meta or {}))
+
+    return docs
 
 def clear_db():
     """
-    Clears the current vector store by resetting it (or deleting the directory).
+    Clears the current vector store.
     """
-    # Simple way to clear is just initializing and resetting if allowed, 
-    # or deleting the directory.
+    try:
+        client = get_client()
+        client.delete_collection(name=COLLECTION_NAME)
+    except Exception:
+        pass
+
     if os.path.exists(CHROMA_PATH):
-        import shutil
-        shutil.rmtree(CHROMA_PATH)
+        shutil.rmtree(CHROMA_PATH, ignore_errors=True)
