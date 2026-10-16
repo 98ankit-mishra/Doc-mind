@@ -1,213 +1,357 @@
-# DocMind – AI PDF Research Assistant
+# DocMind — AI PDF Research Assistant
 
-DocMind is a beginner-friendly web application that allows users to upload a PDF document and ask questions about its content. It is built using a **RAG (Retrieval-Augmented Generation)** architecture, demonstrating core AI/ML engineering concepts suitable for a Software Engineer interview.
+DocMind is a high-performance, production-quality Retrieval-Augmented Generation (RAG) assistant for PDF document research. It extracts textual knowledge from uploaded PDF documents, creates dense vector embeddings locally using HuggingFace models, stores them persistently in ChromaDB, and performs semantic retrieval coupled with Groq-accelerated LLMs to deliver accurate, grounded answers with source page citations.
 
-## 1. Project Overview
-The application takes a user's PDF, extracts its text, and stores it in a searchable local database. When the user asks a question, the application finds the most relevant sections of the document and sends them to an LLM (Large Language Model) to generate a precise, context-aware answer.
-
-## 2. Features
-- **PDF Upload:** Processes and chunks PDF documents.
-- **AI Question Answering:** Answers questions based strictly on the uploaded document.
-- **Source Tracking:** Shows exactly which page the answer came from.
-- **Anti-Hallucination Guardrails:** Refuses to answer if the information is not in the document.
-- **Local Vector Database:** Uses ChromaDB for fast, persistent, and local similarity search.
-- **Free Local Embeddings:** Uses HuggingFace embeddings (`all-MiniLM-L6-v2`) meaning no cost for vectorization.
-
-## 3. Technology Stack (100% Pure Python - Zero LangChain Overhead)
-- **Language:** Python
-- **Backend Framework:** FastAPI & Uvicorn
-- **Frontend:** HTML / CSS / JavaScript
-- **LLM API:** Groq Python SDK (Llama 3)
-- **Vector Database & Embeddings:** ChromaDB Native Client (all-MiniLM-L6-v2)
-- **PDF Extraction:** Pure PyPDF
-- **Architecture:** Zero LangChain dependencies for maximum performance, clean debugging, and zero framework bloat.
+Built with **pure Python, FastAPI, HuggingFace Sentence Transformers, ChromaDB, and the official Groq SDK** — completely free of heavy framework bloat (100% LangChain-free architecture) for maximum execution speed, deterministic debugging, and transparent control.
 
 ---
 
-## What are the core concepts?
+## 1. Resume Claim Verification & Tech Stack
 
-### 4. What is RAG?
-**RAG (Retrieval-Augmented Generation)** is a technique that gives an LLM access to external knowledge (like your specific PDF) that it wasn't trained on. Instead of relying on the LLM's memory, RAG searches for relevant information in your document and provides it to the LLM as context before it answers the question.
+| Resume Claim | Implementation Status | Technical Details |
+|---|---|---|
+| **Six-stage RAG pipeline** | Fully Implemented | Extraction → Chunking → Embedding → Vector Storage → Retrieval → Generation |
+| **Automated PDF extraction & chunking** | Fully Implemented | PyPDF page-by-page extraction, sliding window recursive chunker (1,000 chars, 200 overlap) |
+| **Dense vector embeddings via HuggingFace** | Fully Implemented | `sentence-transformers/all-MiniLM-L6-v2` producing 384-dimensional normalized dense vectors |
+| **Persistent vector storage in ChromaDB** | Fully Implemented | ChromaDB persistent client (`data/chroma_db`) with cosine similarity (`hnsw:space: cosine`) |
+| **Semantic retrieval layer** | Fully Implemented | Top-$K$ ($K=4$) nearest neighbor semantic retrieval using matching query embeddings |
+| **Groq LLM API integration** | Fully Implemented | Native `groq` SDK client invoking `llama3-8b-8192` with strict JSON-compatible responses |
+| **Source-page tracking** | Fully Implemented | 1-based page metadata tracked per chunk and deduplicated across cited context |
+| **Prompt-based grounding guardrails** | Fully Implemented | Delimited untrusted context `<document_context>`, injection defense, and strict abstention |
 
-### 5. What is ChromaDB?
-ChromaDB is a Vector Database. It is designed to store and quickly search through mathematical representations of text (embeddings). 
+### Technology Stack
+- **Backend Language:** Python 3.10+
+- **API Framework:** FastAPI, Uvicorn, Pydantic v2
+- **Vector Database:** ChromaDB (Persistent client, DuckDB/SQLite & HNSW index)
+- **Embedding Model:** HuggingFace `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions)
+- **LLM Inference:** Groq Cloud API (`llama3-8b-8192` via ultra-fast LPUs)
+- **Document Processing:** PyPDF
+- **Frontend:** Responsive Vanilla HTML5, Modern CSS (Glassmorphism), Vanilla JavaScript (Fetch API)
+- **Testing:** Pytest, FastApi TestClient, ReportLab (synthetic test fixtures)
 
-### 6. What are Embeddings?
-Embeddings are arrays of numbers (vectors) that represent the semantic meaning of text. Words or sentences with similar meanings will have vectors that are mathematically close to each other.
+---
 
-### 7. Why ChromaDB is used
-Instead of scanning the entire PDF word-by-word (which is slow and expensive for an LLM), we convert the PDF into embeddings and store them in ChromaDB. When a question is asked, ChromaDB performs a "similarity search" to instantly find the chunks of text most related to the question. We used ChromaDB because it is open-source, runs locally, and is highly efficient for similarity search.
+## 2. The Six-Stage RAG Pipeline Architecture
 
-### 8. How the RAG Pipeline Works
-The pipeline acts as the engine for our application. It handles:
-- Loading the PDF and extracting the text
-- Splitting the text into manageable chunks
-- Managing embeddings and storing them in ChromaDB
-- Creating the prompt template
-- Connecting the retriever and the LLM together seamlessly
-
-### 9. How Groq is used
-Groq is the inference engine (the brain) that runs the LLM (like Llama 3). We use Groq because its specialized hardware (LPUs) generates text incredibly fast.
-
-### 10. Complete RAG Architecture
-```text
-PDF Upload
-    ↓
-Text Extraction
-    ↓
-Chunking
-    ↓
-HuggingFace Embeddings (Convert text to numbers)
-    ↓
-ChromaDB (Store vectors locally)
-    ↓
-Question Asked
-    ↓
-Retriever (Search ChromaDB for similar chunks)
-    ↓
-Context Built (Combine chunks into a string)
-    ↓
-Groq LLM (Prompt + Context + Question)
-    ↓
-Final Answer + Source Pages
+```
+                    ┌────────────────────────────┐
+                    │      Uploaded PDF File     │
+                    └─────────────┬──────────────┘
+                                  │
+                                  ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Stage 1: PDF Text Extraction (src/pdf_processor.py)                    │
+│ - PyPDF page-by-page extraction                                        │
+│ - 1-based page numbering preserved                                     │
+│ - Magic bytes (%PDF-) validation & OCR/scanned document detection      │
+└─────────────────────────────────┬──────────────────────────────────────┘
+                                  │
+                                  ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Stage 2: Document Chunking (src/pdf_processor.py)                      │
+│ - Recursive sliding window chunker: chunk_size=1000, chunk_overlap=200 │
+│ - Natural paragraph (\n\n), line (\n), and sentence break boundaries   │
+│ - Page-level metadata inherited by every chunk                         │
+└─────────────────────────────────┬──────────────────────────────────────┘
+                                  │
+                                  ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Stage 3: Embedding Generation (src/embeddings.py)                      │
+│ - Model: sentence-transformers/all-MiniLM-L6-v2                        │
+│ - Generates 384-dimensional dense vectors                              │
+│ - L2-normalization applied for cosine distance indexing                │
+│ - Local execution on CPU/GPU after one-time initial download           │
+└─────────────────────────────────┬──────────────────────────────────────┘
+                                  │
+                                  ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Stage 4: ChromaDB Vector Storage (src/vector_store.py)                 │
+│ - Persistent storage at data/chroma_db                                 │
+│ - Deterministic SHA-256 chunk IDs prevent duplicate inflation          │
+│ - Multi-document isolation and source-level idempotent re-indexing     │
+└─────────────────────────────────┬──────────────────────────────────────┘
+                                  │
+                                  ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Stage 5: Semantic Retrieval (src/vector_store.py)                      │
+│ - Query vectorization with identical HuggingFace embedding function    │
+│ - Cosine similarity nearest neighbor search retrieves top 4 chunks     │
+│ - Extracts text content, source filenames, and 1-based page numbers    │
+└─────────────────────────────────┬──────────────────────────────────────┘
+                                  │
+                                  ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Stage 6: Grounded Generation (src/prompts.py & src/rag_chain.py)       │
+│ - Retreived context wrapped in <document_context> security boundary    │
+│ - Groq LPU inference (llama3-8b-8192) with temperature=0.1             │
+│ - Strict prompt guardrails: abstains if information is missing         │
+│ - Returns final answer and deduplicated unique source page references  │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 11. Project Structure
+## 3. Deep Dive into Implementation Details
+
+### Stage 1: PDF Extraction
+- `src/pdf_processor.py` validates the `%PDF-` file header before reading.
+- Rejects corrupt or encrypted PDFs with clear, safe error messages.
+- Detects image-only / scanned PDFs where extracted text length is negligible, returning an explicit message that OCR is required rather than failing silently.
+
+### Stage 2: Recursive Document Chunking
+- Configured with `chunk_size = 1000` characters and `chunk_overlap = 200` characters.
+- Splits text hierarchically on paragraph breaks (`\n\n`), newlines (`\n`), sentence endings (`. `, `? `, `! `), and spaces (` `).
+- Preserves word integrity: never cuts a token in half.
+- Preserves context across chunk boundaries by carrying over an overlap window bounded strictly within `chunk_size`.
+- Binds metadata `{ "source": filename, "page": page_number }` to every individual chunk.
+
+### Stage 3: HuggingFace Dense Vector Embeddings
+- Implemented in `src/embeddings.py` using `HuggingFaceEmbeddingFunction`.
+- Conforms fully to the ChromaDB `EmbeddingFunction` protocol (with `name()`, `get_config()`, `build_from_config()`, `__call__()`, and `embed_query()`).
+- Uses `all-MiniLM-L6-v2`:
+  - **Vector Dimension:** 384
+  - **Sequence Length:** 256 word pieces
+  - **L2-Normalized:** Direct dot product equals cosine similarity.
+- Singleton pattern ensures thread-safe, lazy model loading in memory once.
+- Once downloaded to `~/.cache/huggingface`, embedding inference runs entirely locally on CPU/GPU without external API dependencies or network calls.
+
+### Stage 4: Persistent ChromaDB Vector Storage
+- Implemented in `src/vector_store.py`.
+- Persists to `data/chroma_db` using SQLite and HNSW vector indexing.
+- Generates collision-resistant, deterministic chunk IDs:
+  $$\text{ID} = \text{SHA256}(\text{source} + \text{page} + \text{text[:64]} + \text{index})[:16]$$
+- Supports multiple documents simultaneously with source-level filtering.
+- Re-uploading the same PDF triggers an idempotent update: previous chunks for that document are cleared before new ones are inserted, preventing duplicate inflation.
+
+### Stage 5: Semantic Retrieval
+- Retrieves the top $K=4$ most relevant chunks using cosine similarity.
+- Binds identical embedding model configuration to query vectors so query and document embeddings exist in the exact same metric space.
+- Returns chunk text alongside document metadata (file name and 1-based page numbers).
+
+### Stage 6: Grounded Generation & Guardrails
+- Implemented in `src/prompts.py` and `src/rag_chain.py`.
+- Passes retrieved text inside delimited XML blocks (`<document_context>...</document_context>`) to treat document content as untrusted data and mitigate prompt injection attacks.
+- Explicit system instructions enforce factual grounding:
+  - Answers MUST be based exclusively on the provided context.
+  - If the context does not contain the answer, the LLM MUST return:
+    > *"I could not find this information in the uploaded document."*
+  - The model is forbidden from extrapolating or using outside training memory.
+- If the model abstains or if no context is found, source citations are suppressed.
+
+---
+
+## 4. Project Directory Structure
+
 ```text
-docmind/
-├── main.py                 # FastAPI backend and endpoints
-├── requirements.txt        # Python dependencies
-├── .env.example            # Example env variables
-├── src/                    # Core RAG logic
-│   ├── pdf_processor.py    # Loads and splits PDF
-│   ├── embeddings.py       # Initializes HuggingFace embeddings
-│   ├── vector_store.py     # ChromaDB logic
-│   ├── rag_chain.py        # Connects retriever to LLM
-│   └── prompts.py          # Strict LLM instructions
-├── templates/              
-│   └── index.html          # Frontend HTML
+DocMind/
+├── main.py                     # FastAPI application endpoints (/health, /upload, /ask, /clear)
+├── requirements.txt            # Minimal, pinned Python dependencies (Zero LangChain)
+├── .env.example                # Template for environment configuration
+├── src/
+│   ├── __init__.py
+│   ├── pdf_processor.py        # Stage 1 & 2: PyPDF extraction and recursive chunking
+│   ├── embeddings.py           # Stage 3: HuggingFace SentenceTransformer (all-MiniLM-L6-v2)
+│   ├── vector_store.py         # Stage 4 & 5: Persistent ChromaDB client and semantic retriever
+│   ├── prompts.py              # Stage 6: Grounding guardrails and prompt templates
+│   └── rag_chain.py            # Stage 6: Groq SDK inference and answer pipeline
 ├── static/
-│   ├── style.css           # Frontend CSS
-│   └── script.js           # Frontend logic
-└── data/uploads/           # Stores uploaded PDFs
+│   ├── style.css               # Modern glassmorphism UI styling
+│   └── script.js               # Frontend async fetch logic and UI updates
+├── templates/
+│   └── index.html              # Clean single-page application UI
+├── tests/
+│   ├── __init__.py
+│   └── test_basic.py           # 18-test automated unit & integration test suite
+└── data/
+    ├── uploads/                # Local uploaded PDF documents
+    └── chroma_db/              # Persistent ChromaDB vector database files
 ```
 
 ---
 
-## Getting Started
+## 5. Installation and Setup
 
-### 12. Installation & Virtual Environment Setup
-1. Open your terminal.
-2. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   ```
-3. Activate the virtual environment:
-   - Windows: `venv\Scripts\activate`
-   - Mac/Linux: `source venv/bin/activate`
-4. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### Prerequisites
+- Python 3.10, 3.11, or 3.12
+- Git
+- A free Groq Cloud API key from [console.groq.com](https://console.groq.com/)
 
-### 13. Environment Variable Setup
-1. Copy `.env.example` to `.env`:
-   ```bash
-   cp .env.example .env
-   ```
-2. Get a free API key from [Groq Cloud](https://console.groq.com/).
-3. Add your key to the `.env` file:
-   ```env
-   GROQ_API_KEY=gsk_your_api_key_here
-   ```
-
-### 14. How to run FastAPI
-Run the application using Uvicorn:
+### Step 1: Clone the Repository
 ```bash
-uvicorn main:app --reload
+git clone https://github.com/98ankit-mishra/Doc-mind.git
+cd Doc-mind
 ```
-The application will be available at `http://localhost:8000`.
 
-### 15. How to use the application
-1. Open `http://localhost:8000` in your browser.
-2. Click **Upload & Process** and select a PDF.
-3. Wait for the success message.
-4. Type a question in the chat box and click **Ask**.
+### Step 2: Create and Activate a Virtual Environment
+- **On Windows (PowerShell):**
+  ```powershell
+  python -m venv .venv
+  .\.venv\Scripts\Activate.ps1
+  ```
+- **On Linux / macOS:**
+  ```bash
+  python3 -m venv .venv
+  source .venv/bin/activate
+  ```
 
-### 16. API Endpoints
-- `GET /` - Serves the frontend UI.
-- `GET /health` - Health check status.
-- `POST /upload` - Expects a multipart form data file. Processes and stores the PDF.
-- `POST /ask` - Expects JSON `{"question": "..."}`. Returns the answer and sources.
-- `POST /clear` - Clears the vector database.
+### Step 3: Install Dependencies
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-### 17. Example questions
-If you upload an employee handbook:
-- "What is the work from home policy?"
-- "How many vacation days do I get?"
-- "What is the capital of France?" *(The AI should refuse to answer this!)*
-
-### 18. Common Errors
-- **`GROQ_API_KEY is not set`**: You forgot to create the `.env` file or missed the key.
-- **SQLite3 Version Error**: ChromaDB requires a newer version of SQLite. If you see this on older systems, you may need to install `pysqlite3-binary`.
-- **HuggingFace Download Error**: The first time you run the app, it downloads the embedding model. Ensure you have internet access.
-
-### 19. Future Improvements
-- Add persistent user chat history using a database like PostgreSQL.
-- Support for other file types (docx, txt, csv).
-- Add citations directly inline with the text.
+### Step 4: Configure Environment Variables
+Create a `.env` file in the root directory:
+```bash
+cp .env.example .env
+```
+Open `.env` and paste your Groq API key:
+```env
+GROQ_API_KEY=gsk_your_actual_groq_api_key_here
+```
 
 ---
 
-## Interview Questions I Should Be Able To Answer
+## 6. Running the Application
 
-**1. What is RAG?**
-Retrieval-Augmented Generation is a framework that improves LLM responses by fetching factual, relevant information from an external database (like our PDF) and providing it to the LLM before it answers.
+Start the FastAPI application using Uvicorn:
+```bash
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
 
-**2. Why did you use RAG?**
-LLMs are trained on general data up to a certain date. They do not know about private documents (like a user's PDF). RAG allows us to query private data securely and cheaply without retraining the model.
+Open your browser and navigate to:
+```
+http://127.0.0.1:8000
+```
 
-**3. What are embeddings?**
-Embeddings are numerical representations (vectors) of text. They capture the semantic meaning of words. 
+### Using the Web UI
+1. **Upload a PDF:** Select any text-based PDF and click **Upload & Process**. The system validates, extracts, chunks, generates 384-dimensional embeddings, and indexes them into ChromaDB.
+2. **Ask Questions:** Type your inquiry in the search bar and press **Ask**.
+3. **Inspect Citations:** Verify the answer and see the exact page numbers cited.
+4. **Clear Session:** Click **Clear Database** to wipe the current vector store and uploaded files.
 
-**4. Why do we need a vector database?**
-Standard databases match exact keywords. Vector databases match *meaning*. We need a vector database to perform "similarity searches" to quickly find chunks of text that mean the same thing as the user's question, even if the exact words are different.
+---
 
-**5. What is ChromaDB and why did you choose it?**
-ChromaDB is an open-source, AI-native vector database. I chose it because it is lightweight, runs locally (no complex cloud setup required), and is perfect for building beginner-friendly RAG pipelines.
+## 7. Running Automated Tests
 
-**6. What is a retriever?**
-A retriever is the component that takes the user's question, converts it to an embedding, searches the vector database, and returns the top `K` most relevant document chunks.
+A comprehensive suite of 18 automated tests covers all pipeline stages, vector persistence, injection resistance, and API endpoints. Unit tests mock Groq inference to run deterministically and fully offline.
 
-**7. Why do we split documents into chunks?**
-LLMs have a "context window" limit (they can only read a certain amount of text at once). If we pass a 100-page PDF to an LLM, it will crash or forget information. Chunking ensures we only send the most relevant paragraphs.
+Execute pytest with verbose output:
+```bash
+pytest tests/test_basic.py -v
+```
 
-**8. What is chunk overlap?**
-When we split a document, a sentence might get cut in half. Overlap ensures that chunk 2 starts slightly before chunk 1 ends, preserving context across boundaries.
+### Test Coverage Highlights
+- `test_pdf_extraction_page_numbering`: Verifies 1-based page metadata extraction.
+- `test_chunk_size_and_overlap_bounds`: Validates chunk size $\le 1000$ and overlap preservation.
+- `test_pdf_extraction_scanned_ocr_detection`: Confirms proper handling of text-free scanned PDFs.
+- `test_pdf_extraction_corrupt_file`: Rejects non-PDF files missing magic bytes.
+- `test_huggingface_embeddings_configuration`: Validates `all-MiniLM-L6-v2` 384-dimensional vectors.
+- `test_vector_store_persistence_and_stable_ids`: Checks SHA-256 ID stability and ChromaDB storage.
+- `test_vector_store_idempotent_reupload`: Verifies re-uploading replaces chunks without duplication.
+- `test_multi_document_coexistence`: Tests simultaneous multi-PDF isolation.
+- `test_grounding_prompt_and_injection_resistance`: Validates prompt boundaries and injection defense.
+- `test_rag_chain_with_mock_groq`: Verifies generation with mock LLM client.
+- `test_rag_chain_abstention_no_sources`: Confirms source suppression upon abstention.
+- `test_rag_chain_empty_vector_store`: Handles queries before documents are uploaded.
+- `test_api_health_endpoint`: Checks `/health` endpoint metadata.
+- `test_api_upload_valid_pdf`: Tests `/upload` with synthetic PDF fixture.
+- `test_api_upload_invalid_non_pdf`: Rejects `.txt` files with 400 Bad Request.
+- `test_api_upload_corrupt_file`: Rejects corrupt files with 400 Bad Request.
+- `test_api_ask_empty_question`: Validates input rejection for empty questions.
+- `test_api_clear_endpoint`: Tests `/clear` database reset.
 
-**9. Why did you use Groq?**
-Groq provides exceptionally fast inference for open-source models like Llama 3 via their custom LPU hardware.
+---
 
-**10. What is an LLM?**
-A Large Language Model is an AI trained on massive amounts of text to predict the next word in a sequence, allowing it to understand and generate human-like text.
+## 8. REST API Reference
 
-**11. What is hallucination and how does your project reduce it?**
-Hallucination is when an LLM confidently makes up false information. This project reduces it by providing strict ground-truth context (the PDF) and using a prompt that explicitly says: "Answer ONLY using the context. If you don't know, say so. Do not invent facts."
+### `GET /health`
+Returns system status and index metadata.
+```json
+{
+  "status": "healthy",
+  "indexed_chunks": 12,
+  "indexed_documents": ["annual_report.pdf"]
+}
+```
 
-**12. RAG vs fine-tuning?**
-Fine-tuning trains the model's internal weights on new data (expensive, slow, hard to update). RAG keeps the model static and provides the new data in the prompt (cheap, fast, easy to update/delete data).
+### `POST /upload`
+Uploads and indexes a PDF document (`multipart/form-data`).
+- **Form Field:** `file: UploadFile`
+- **Response:**
+  ```json
+  {
+    "message": "PDF processed and indexed successfully",
+    "filename": "annual_report.pdf",
+    "chunks_indexed": 12
+  }
+  ```
 
-**13. What happens when a user asks a question?**
-1. Question is converted to a vector embedding.
-2. ChromaDB finds similar vectors (chunks) from the PDF.
-3. We combine the chunks into a "Context" string.
-4. We send the Prompt + Context + Question to Groq.
-5. Groq returns the answer.
+### `POST /ask`
+Queries indexed documents using the six-stage RAG pipeline.
+- **Request:**
+  ```json
+  {
+    "question": "What was the company's net profit in 2023?"
+  }
+  ```
+- **Response:**
+  ```json
+  {
+    "answer": "According to the report, the net profit in 2023 was $4.2 million.",
+    "sources": [
+      {
+        "source": "annual_report.pdf",
+        "page": 4
+      }
+    ]
+  }
+  ```
 
-**14. What is FastAPI and why did you use it?**
-FastAPI is a modern, fast web framework for Python. I used it because it is easy to read, automatically handles JSON parsing, and is the industry standard for serving Python AI models. 
+### `POST /clear`
+Resets the ChromaDB vector database and deletes cached upload files.
+- **Response:**
+  ```json
+  {
+    "status": "success",
+    "message": "Database cleared successfully"
+  }
+  ```
 
-**15. How does the frontend communicate with FastAPI?**
-The frontend HTML uses JavaScript (`fetch` API) to send HTTP requests (`POST /upload`, `POST /ask`) to the FastAPI backend, which processes the request and returns JSON responses.
+---
+
+## 9. Technical Interview Guide & Known Limitations
+
+### Common Interview Questions
+
+#### Q1: Why did you eliminate LangChain from the project?
+**Answer:** LangChain adds heavy abstraction layers, frequent breaking changes across minor releases, and significant runtime latency. By using native Python with ChromaDB and the official Groq SDK, our architecture has zero unnecessary dependencies, executes faster, enables clear stack traces during debugging, and provides complete control over prompts and chunking algorithms.
+
+#### Q2: What embedding model did you choose and why?
+**Answer:** We chose `sentence-transformers/all-MiniLM-L6-v2`. It produces 384-dimensional dense vectors and maps sentences to a dense vector space tuned for semantic similarity and clustering. It achieves high retrieval quality with a lightweight footprint (~80MB), allowing rapid local inference on standard CPUs without incurring third-party API costs or network latency.
+
+#### Q3: How do you prevent duplicate chunks when a user re-uploads the same document?
+**Answer:** In `src/vector_store.py`, chunk IDs are generated deterministically using a SHA-256 hash of `source + page + text[:64] + chunk_index`. When a document is re-uploaded, the system first executes an idempotent deletion of all existing records matching `{"source": filename}` before indexing the new chunks.
+
+#### Q4: How does prompt grounding work and can it completely eliminate hallucinations?
+**Answer:** The prompt encloses retrieved chunks inside `<document_context>` XML delimiters, instructing the LLM that this is data rather than instructions (defending against prompt injection). The system prompt mandates that answers be derived strictly from the context, requiring the model to output a standardized abstention message if information is absent. While this drastically reduces hallucinations, no prompt technique can mathematically guarantee 100% elimination because autoregressive LLMs sample tokens probabilistically.
+
+---
+
+### Known Limitations & Production Roadmap
+
+1. **Scanned PDFs & OCR:**
+   - *Current Behavior:* PyPDF extracts text streams. If a PDF is a scanned image without a text layer, the system detects zero extracted characters and raises a `ValueError` explaining that OCR is required.
+   - *Roadmap:* Integrate Tesseract OCR or a cloud vision API for scanned document fallback.
+
+2. **Complex Tables & Multi-Column Layouts:**
+   - *Current Behavior:* Standard PDF text extraction reads linear text streams, which can interleave adjacent columns or scramble tabular structures.
+   - *Roadmap:* Implement layout-aware chunking (e.g., PDFPlumber or Microsoft Table Transformer).
+
+3. **Fixed Retrieval ($K=4$) vs. Re-ranking:**
+   - *Current Behavior:* The retriever selects the top 4 chunks strictly based on cosine similarity.
+   - *Roadmap:* Add a cross-encoder re-ranker (e.g., `bge-reranker-base`) to re-score the top 20 candidate chunks for higher semantic precision.
+
+4. **Multi-Turn Chat History:**
+   - *Current Behavior:* The current implementation operates on a single-turn question-answering basis.
+   - *Roadmap:* Add a conversation buffer memory and query reformulation stage to support follow-up conversational queries.
