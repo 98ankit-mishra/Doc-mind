@@ -6,7 +6,7 @@ Built with **pure Python, FastAPI, HuggingFace Sentence Transformers, ChromaDB, 
 
 ---
 
-## 1. Resume Claim Verification & Tech Stack
+## 1.Tech Stack
 
 | Resume Claim | Implementation Status | Technical Details |
 |---|---|---|
